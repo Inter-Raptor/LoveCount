@@ -12,8 +12,39 @@
 #include <LittleFS.h>
 #include <time.h>
 #include <vector>
+#include <pgmspace.h>
 
 #include <ArduinoJson.h>
+
+#include "coeur.h"
+#if __has_include("boule.h")
+#include "boule.h"
+#define HAS_BOULE 1
+#endif
+#if __has_include("calin.h")
+#include "calin.h"
+#define HAS_CALIN 1
+#endif
+#if __has_include("eclair.h")
+#include "eclair.h"
+#define HAS_ECLAIR 1
+#endif
+#if __has_include("etincel.h")
+#include "etincel.h"
+#define HAS_ETINCEL 1
+#endif
+#if __has_include("etoile.h")
+#include "etoile.h"
+#define HAS_ETOILE 1
+#endif
+#if __has_include("goutte.h")
+#include "goutte.h"
+#define HAS_GOUTTE 1
+#endif
+#if __has_include("Smiley.h")
+#include "Smiley.h"
+#define HAS_SMILEY 1
+#endif
 
 // =====================================================
 // IMPORTANT Arduino IDE: mettre l'enum TOUT EN HAUT
@@ -45,6 +76,44 @@ struct AppCfg {
 };
 
 static AppCfg CFG;
+
+struct AnimChoice {
+  String mmdd;
+  String key;
+};
+
+struct AnimationDef {
+  const char* key;
+  uint8_t frameCount;
+  const uint16_t* const* frames;
+  const uint16_t* widths;
+  const uint16_t* heights;
+};
+
+static const AnimationDef kAnimations[] = {
+  { "coeur", coeur_frame_count, coeur_frames, coeur_w, coeur_h },
+#if defined(HAS_ETOILE)
+  { "etoile", etoile_frame_count, etoile_frames, etoile_w, etoile_h },
+#endif
+#if defined(HAS_CALIN)
+  { "calin", calin_frame_count, calin_frames, calin_w, calin_h },
+#endif
+#if defined(HAS_BOULE)
+  { "boule", boule_frame_count, boule_frames, boule_w, boule_h },
+#endif
+#if defined(HAS_GOUTTE)
+  { "goutte", goutte_frame_count, goutte_frames, goutte_w, goutte_h },
+#endif
+#if defined(HAS_ECLAIR)
+  { "eclair", eclair_frame_count, eclair_frames, eclair_w, eclair_h },
+#endif
+#if defined(HAS_ETINCEL)
+  { "etincel", etincel_frame_count, etincel_frames, etincel_w, etincel_h },
+#endif
+#if defined(HAS_SMILEY)
+  { "smiley", Smiley_frame_count, Smiley_frames, Smiley_w, Smiley_h },
+#endif
+};
 
 // prototype explicite (encore plus sûr)
 static uint16_t genderColor(Gender g);
@@ -112,6 +181,7 @@ static void setDefaultSettings() {
   CFG.font = FONT_CLASSIC;
   CFG.colorMode = COLOR_RAINBOW;
   CFG.fixedColor = 0;
+  animChoices.clear();
 }
 
 static bool saveSettings() {
@@ -129,6 +199,11 @@ static bool saveSettings() {
   d["font"] = (int)CFG.font;
   d["colorMode"] = (int)CFG.colorMode;
   d["fixedColor"] = (int)CFG.fixedColor;
+
+ JsonObject anims = doc["anims"].to<JsonObject>();
+  for (const auto& entry : animChoices) {
+    if (entry.mmdd.length() == 5) anims[entry.mmdd] = entry.key;
+  }
 
   File f = LittleFS.open(SETTINGS_PATH, "w");
   if (!f) return false;
@@ -170,6 +245,18 @@ static bool loadSettings() {
   CFG.font = (FontMode)(int)(d["font"] | (int)FONT_CLASSIC);
   CFG.colorMode = (ColorMode)(int)(d["colorMode"] | (int)COLOR_RAINBOW);
   CFG.fixedColor = (uint8_t)(int)(d["fixedColor"] | 0);
+
+  animChoices.clear();
+  if (doc.containsKey("anims")) {
+    JsonObject a = doc["anims"];
+    for (JsonPair kv : a) {
+      String mmdd = kv.key().c_str();
+      String key = jsonCStr(kv.value(), "coeur");
+      if (mmdd.length() != 5 || mmdd[2] != '-') continue;
+      if (!findAnimationByKey(key)) key = "coeur";
+      animChoices.push_back({mmdd, key});
+    }
+  }
 
   CFG.font = (FontMode)clampI((int)CFG.font, 0, 5);
   CFG.colorMode = (ColorMode)clampI((int)CFG.colorMode, 0, 2);
@@ -469,6 +556,30 @@ static String todayMMDD() {
 
 static String fileForMMDD(const String& mmdd) { return "/a_" + mmdd + ".txt"; }
 
+static const AnimationDef* findAnimationByKey(const String& key) {
+  for (const auto& anim : kAnimations) {
+    if (key == anim.key) return &anim;
+  }
+  return nullptr;
+}
+
+static String animKeyForMMDD(const String& mmdd) {
+  for (const auto& entry : animChoices) {
+    if (entry.mmdd == mmdd) return entry.key;
+  }
+  return String("coeur");
+}
+
+static void setAnimKeyForMMDD(const String& mmdd, const String& key) {
+  for (auto& entry : animChoices) {
+    if (entry.mmdd == mmdd) {
+      entry.key = key;
+      return;
+    }
+  }
+  animChoices.push_back({mmdd, key});
+}
+
 static std::vector<String> loadAnecdotes(const String& mmdd) {
   std::vector<String> out;
   String path = fileForMMDD(mmdd);
@@ -579,6 +690,20 @@ button{padding:10px 14px;cursor:pointer}
 <label>Date :</label><input id="d" type="date">
 <button onclick="refresh()">Voir</button>
 </div>
+<div class="row">
+<label>Animation :</label><select id="anim">
+<option value="coeur">Coeur</option>
+<option value="etoile">Etoile</option>
+<option value="calin">Calin</option>
+<option value="boule">Boule</option>
+<option value="goutte">Goutte</option>
+<option value="eclair">Eclair</option>
+<option value="etincel">Etincel</option>
+<option value="smiley">Smiley</option>
+</select>
+<button onclick="saveAnim()">Sauver animation</button>
+<span id="msgAnim" class="small"></span>
+</div>
 <textarea id="t" placeholder="Écris ton anecdote ici..."></textarea>
 <div class="row">
 <button onclick="add()">Enregistrer</button>
@@ -652,6 +777,7 @@ async function refresh(){
     b.onclick=()=>del(i); li.appendChild(b); L.appendChild(li);
   });
   if(!j.items||!j.items.length) L.innerHTML='<li><em>Aucune anecdote pour ce jour.</em></li>';
+  await loadAnim();
 }
 
 async function add(){
@@ -679,6 +805,17 @@ async function loadSettings(){
   elD('fixedColor').value=String(j.display?.fixedColor??0);
   toggleColorPick();
   if(j.marriage&&j.marriage.iso) elD('mdate').value=j.marriage.iso;
+}
+async function loadAnim(){
+  const date=elD('d').value||todayISO();
+  const r=await fetch(`/api/anim/get?date=${encodeURIComponent(date)}`); const j=await r.json();
+  if(j.anim) elD('anim').value=String(j.anim);
+}
+async function saveAnim(){
+  const date=elD('d').value||todayISO();
+  const body=new URLSearchParams({date,anim:elD('anim').value});
+  const r=await fetch('/api/anim/set',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});
+  const j=await r.json(); elD('msgAnim').textContent=j.ok?'Sauvé ✅':'Erreur ❌';
 }
 async function saveSettings(){
  const body=new URLSearchParams({
@@ -724,6 +861,45 @@ static void handleList() {
   }
   json += "]}";
   server.send(200, "application/json; charset=utf-8", json);
+}
+
+static void handleAnimGet() {
+  String date = server.arg("date");
+  if (date.length() < 10) { server.send(400, "application/json", "{\"ok\":false}"); return; }
+  String mmdd = mmddFromDateStr(date);
+  String key = animKeyForMMDD(mmdd);
+
+  DynamicJsonDocument doc(128);
+  doc["ok"] = true;
+  doc["anim"] = key;
+  String out; serializeJson(doc, out);
+  server.send(200, "application/json; charset=utf-8", out);
+}
+
+static void handleAnimSet() {
+  String date = server.arg("date");
+  String key = server.arg("anim");
+  if (date.length() < 10 || key.length() == 0) {
+    server.send(400, "application/json", "{\"ok\":false}");
+    return;
+  }
+  String mmdd = mmddFromDateStr(date);
+  if (!findAnimationByKey(key)) {
+    server.send(400, "application/json", "{\"ok\":false}");
+    return;
+  }
+  setAnimKeyForMMDD(mmdd, key);
+  bool ok = saveSettings();
+  if (mmdd == (timeReady ? todayMMDD() : String("01-01"))) {
+    animKey = key;
+    animFrame = 0;
+    lastAnimTick = 0;
+    if (viewMode == VIEW_COUNTDOWN) drawCountdownAnimation();
+  }
+  DynamicJsonDocument doc(128);
+  doc["ok"] = ok;
+  String out; serializeJson(doc, out);
+  server.send(200, "application/json; charset=utf-8", out);
 }
 
 static void handleAdd() {
@@ -825,6 +1001,11 @@ static void handleExport() {
   JsonObject m = doc["settings"]["marriage"].to<JsonObject>();
   m["y"]=CFG.y; m["mon"]=CFG.mon; m["d"]=CFG.d; m["hh"]=CFG.hh; m["mm"]=CFG.mm; m["ss"]=CFG.ss;
 
+  JsonObject anims = doc["anims"].to<JsonObject>();
+  for (const auto& entry : animChoices) {
+    if (entry.mmdd.length() == 5) anims[entry.mmdd] = entry.key;
+  }
+
   JsonObject an = doc["anecdotes"].to<JsonObject>();
 
   File root = LittleFS.open("/");
@@ -883,6 +1064,19 @@ static void handleImport() {
     marriageEpoch = makeLocalEpoch(CFG.y,CFG.mon,CFG.d,CFG.hh,CFG.mm,CFG.ss);
   }
 
+  if (doc.containsKey("anims")) {
+    animChoices.clear();
+    JsonObject a = doc["anims"];
+    for (JsonPair kv : a) {
+      String mmdd = kv.key().c_str();
+      String key = jsonCStr(kv.value(), "coeur");
+      if (mmdd.length() != 5 || mmdd[2] != '-') continue;
+      if (!findAnimationByKey(key)) key = "coeur";
+      animChoices.push_back({mmdd, key});
+    }
+    saveSettings();
+  }
+
   if (doc.containsKey("anecdotes")) {
     JsonObject a = doc["anecdotes"];
     for (JsonPair kv : a) {
@@ -909,6 +1103,8 @@ static void setupWeb() {
   server.on("/api/list", HTTP_GET, handleList);
   server.on("/api/add", HTTP_POST, handleAdd);
   server.on("/api/del", HTTP_POST, handleDel);
+  server.on("/api/anim/get", HTTP_GET, handleAnimGet);
+  server.on("/api/anim/set", HTTP_POST, handleAnimSet);
 
   server.on("/api/settings/get", HTTP_GET, handleSettingsGet);
   server.on("/api/settings/set", HTTP_POST, handleSettingsSet);
@@ -927,6 +1123,12 @@ static std::vector<String> todays;
 static int anecIndex = 0;
 static String mmddToday = "";
 static uint32_t lastAnecdoteInteraction = 0;
+static std::vector<AnimChoice> animChoices;
+
+static String animMmdd = "";
+static String animKey = "coeur";
+static uint8_t animFrame = 0;
+static uint32_t lastAnimTick = 0;
 
 static uint32_t lastSecondTick = 0;
 static uint32_t lastRainbowTick = 0;
@@ -936,6 +1138,32 @@ static uint16_t lastRainbowColor = 0xFFFF;
 static void applyDefaultFont() {
   lcd.setFont(nullptr);
   lcd.setTextSize(1);
+}
+
+static void syncAnimationForToday() {
+  String mmdd = timeReady ? todayMMDD() : String("01-01");
+  if (mmdd != animMmdd) {
+    animMmdd = mmdd;
+    animKey = animKeyForMMDD(mmdd);
+    animFrame = 0;
+    lastAnimTick = 0;
+  }
+  if (!findAnimationByKey(animKey)) animKey = "coeur";
+}
+
+static void drawCountdownAnimation() {
+  const AnimationDef* anim = findAnimationByKey(animKey);
+  if (!anim || anim->frameCount == 0) return;
+
+  uint8_t idx = animFrame % anim->frameCount;
+  uint16_t w = (uint16_t)pgm_read_word(&anim->widths[idx]);
+  uint16_t h = (uint16_t)pgm_read_word(&anim->heights[idx]);
+  const uint16_t* frame = (const uint16_t*)pgm_read_ptr(&anim->frames[idx]);
+
+  int x = lcd.width() - w - 6;
+  int y = 36;
+  lcd.fillRect(x, y, w, h, TFT_BLACK);
+  lcd.pushImage(x, y, w, h, frame);
 }
 
 static int applyCountdownFont() {
@@ -1057,6 +1285,8 @@ static void drawBigCounter(uint16_t color) {
 static void drawCountdownScreenFull() {
   lcd.fillScreen(TFT_BLACK);
   drawNamesTop();
+  syncAnimationForToday();
+  drawCountdownAnimation();
   drawBigCounter(lastRainbowColor);
   drawBottomBar();
 }
@@ -1176,6 +1406,16 @@ static void loopApp() {
 
   if (viewMode == VIEW_ANECDOTE && (millis() - lastAnecdoteInteraction >= 5000)) {
     exitAnecdoteMode();
+  }
+
+  if (viewMode == VIEW_COUNTDOWN) {
+    syncAnimationForToday();
+    const AnimationDef* anim = findAnimationByKey(animKey);
+    if (anim && anim->frameCount > 0 && (millis() - lastAnimTick >= 250)) {
+      lastAnimTick = millis();
+      drawCountdownAnimation();
+      animFrame = (uint8_t)((animFrame + 1) % anim->frameCount);
+    }
   }
 
   // Rainbow
