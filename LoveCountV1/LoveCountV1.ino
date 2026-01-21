@@ -20,7 +20,14 @@
 // (sinon le générateur de prototypes casse tout)
 // =====================================================
 enum Gender : uint8_t { G_MALE=0, G_FEMALE=1, G_OTHER=2 };
-enum FontMode : uint8_t { FONT_CLASSIC=0, FONT_COMPACT=1, FONT_LARGE=2, FONT_PRETTY=3 };
+enum FontMode : uint8_t {
+  FONT_CLASSIC=0,
+  FONT_COMPACT=1,
+  FONT_LARGE=2,
+  FONT_PRETTY=3,
+  FONT_TALL=4,
+  FONT_BOLD=5
+};
 enum ColorMode : uint8_t { COLOR_RAINBOW=0, COLOR_FIXED=1, COLOR_PULSE=2 };
 
 struct PersonCfg {
@@ -164,7 +171,7 @@ static bool loadSettings() {
   CFG.colorMode = (ColorMode)(int)(d["colorMode"] | (int)COLOR_RAINBOW);
   CFG.fixedColor = (uint8_t)(int)(d["fixedColor"] | 0);
 
-  CFG.font = (FontMode)clampI((int)CFG.font, 0, 3);
+  CFG.font = (FontMode)clampI((int)CFG.font, 0, 5);
   CFG.colorMode = (ColorMode)clampI((int)CFG.colorMode, 0, 2);
   CFG.fixedColor = (uint8_t)clampI((int)CFG.fixedColor, 0, 6);
 
@@ -598,6 +605,8 @@ button{padding:10px 14px;cursor:pointer}
 <option value="1">Compacte</option>
 <option value="2">Large</option>
 <option value="3">Jolie</option>
+<option value="4">Elancee</option>
+<option value="5">Grasse</option>
 </select>
 </div>
 <div class="row">
@@ -787,7 +796,7 @@ static void handleSettingsSet() {
   CFG.p1.gender = (Gender)clampI(g1.toInt(), 0, 2);
   CFG.p2.name = n2;
   CFG.p2.gender = (Gender)clampI(g2.toInt(), 0, 2);
-  if (font.length()) CFG.font = (FontMode)clampI(font.toInt(), 0, 3);
+  if (font.length()) CFG.font = (FontMode)clampI(font.toInt(), 0, 5);
   if (colorMode.length()) CFG.colorMode = (ColorMode)clampI(colorMode.toInt(), 0, 2);
   if (fixedColor.length()) CFG.fixedColor = (uint8_t)clampI(fixedColor.toInt(), 0, 6);
 
@@ -866,7 +875,7 @@ static void handleImport() {
     CFG.font = (FontMode)(int)(disp["font"] | (int)CFG.font);
     CFG.colorMode = (ColorMode)(int)(disp["colorMode"] | (int)CFG.colorMode);
     CFG.fixedColor = (uint8_t)(int)(disp["fixedColor"] | (int)CFG.fixedColor);
-    CFG.font = (FontMode)clampI((int)CFG.font, 0, 3);
+    CFG.font = (FontMode)clampI((int)CFG.font, 0, 5);
     CFG.colorMode = (ColorMode)clampI((int)CFG.colorMode, 0, 2);
     CFG.fixedColor = (uint8_t)clampI((int)CFG.fixedColor, 0, 6);
 
@@ -939,6 +948,12 @@ static int applyCountdownFont() {
       return 1;
     case FONT_PRETTY:
       lcd.setFont(&fonts::Font7);
+      return 1;
+    case FONT_TALL:
+      lcd.setFont(&fonts::Font6);
+      return 1;
+    case FONT_BOLD:
+      lcd.setFont(&fonts::Font8);
       return 1;
     default:
       lcd.setFont(nullptr);
