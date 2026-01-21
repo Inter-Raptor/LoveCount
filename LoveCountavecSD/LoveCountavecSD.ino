@@ -1207,6 +1207,28 @@ static void drawCenteredText(const String& s, int y, int textSize, uint16_t colo
   lcd.print(s);
 }
 
+static void drawAnecdoteCounterAt(int cy) {
+  const int diameter = 16;
+  const int radius = diameter / 2;
+  const int cx = lcd.width() / 2;
+  const String label = String(todays.size());
+
+  lcd.fillCircle(cx, cy, radius, TFT_WHITE);
+  lcd.drawCircle(cx, cy, radius, TFT_BLACK);
+
+  lcd.setTextSize(1);
+  lcd.setTextColor(TFT_BLACK, TFT_WHITE);
+  int w = lcd.textWidth(label);
+  int h = lcd.fontHeight();
+  lcd.setCursor(cx - w / 2, cy - h / 2);
+  lcd.print(label);
+}
+
+static void refreshTodaysAnecdotes() {
+  mmddToday = timeReady ? todayMMDD() : String("01-01");
+  todays = loadAnecdotes(mmddToday);
+}
+
 static void drawNamesTop() {
   applyDefaultFont();
   lcd.setTextSize(2);
@@ -1230,12 +1252,13 @@ static void drawBottomBar() {
   lcd.setTextSize(1);
   lcd.setTextColor(TFT_WHITE, TFT_BLACK);
 
+  const int barY = lcd.height() - 16;
   char start[32];
   snprintf(start, sizeof(start), "depuis %02d/%02d/%04d %02d:%02d",
            CFG.d, CFG.mon, CFG.y, CFG.hh, CFG.mm);
 
   int w = lcd.textWidth(start);
-  lcd.setCursor(lcd.width() - w - 6, lcd.height() - 16);
+  lcd.setCursor(lcd.width() - w - 6, barY);
   lcd.print(start);
 
   if (timeReady) {
@@ -1245,13 +1268,15 @@ static void drawBottomBar() {
     char buf[16];
     snprintf(buf, sizeof(buf), "%02d:%02d:%02d", lt.tm_hour, lt.tm_min, lt.tm_sec);
     lcd.setTextColor(TFT_WHITE, TFT_BLACK);
-    lcd.setCursor(6, lcd.height() - 16);
+  lcd.setCursor(6, barY);
     lcd.print(buf);
   } else {
     lcd.setTextColor(TFT_DARKGREY, TFT_BLACK);
-    lcd.setCursor(6, lcd.height() - 16);
+  lcd.setCursor(6, barY);
     lcd.print("heure: --:--:--");
   }
+
+  drawAnecdoteCounterAt(barY + 8);
 }
 
 static void drawBigCounter(uint16_t color) {
@@ -1291,6 +1316,7 @@ static void drawCountdownScreenFull() {
   syncAnimationForToday();
   drawCountdownAnimation();
   drawBigCounter(lastRainbowColor);
+  refreshTodaysAnecdotes();
   drawBottomBar();
 }
 
@@ -1304,6 +1330,7 @@ static void drawAnecdoteScreen() {
     lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
     lcd.setCursor(10, 90);
     lcd.print("Aujourd'hui, il faut\nvous creer votre\nmoment a vous.");
+    drawAnecdoteCounterAt(lcd.height() - 12);
     return;
 }
 
@@ -1314,11 +1341,11 @@ static void drawAnecdoteScreen() {
   lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
   lcd.setCursor(10, 80);
   lcd.print(todays[anecIndex]);
+  drawAnecdoteCounterAt(lcd.height() - 12);
 }
 
 static void enterAnecdoteMode() {
-  mmddToday = timeReady ? todayMMDD() : String("01-01");
-  todays = loadAnecdotes(mmddToday);
+  refreshTodaysAnecdotes();
   anecIndex = 0;
   viewMode = VIEW_ANECDOTE;
   // (écran anecdotes simplifié pour rester lisible)
