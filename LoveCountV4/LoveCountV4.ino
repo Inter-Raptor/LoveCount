@@ -1167,7 +1167,9 @@ static void drawCountdownAnimation() {
   int x = lcd.width() - w - 6;
   int y = 0;
   lcd.fillRect(x, y, w, h, TFT_BLACK);
+  lcd.setSwapBytes(true);
   lcd.pushImage(x, y, w, h, frame);
+  lcd.setSwapBytes(false);
 }
 
 static int applyCountdownFont() {
