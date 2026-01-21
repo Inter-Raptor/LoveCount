@@ -538,6 +538,14 @@ static uint16_t counterColor() {
   return paletteColor(CFG.fixedColor);
 }
 
+static uint16_t currentCounterColor() {
+  if (CFG.colorMode == COLOR_RAINBOW) {
+    uint8_t hue = (uint8_t)((millis() / 35) & 0xFF);
+    return wheel565(hue);
+  }
+  return counterColor();
+}
+
 // =================== WEB ===================
 static WebServer server(80);
 
@@ -1113,13 +1121,7 @@ static void loopApp() {
       lastRainbowTick = millis();
       uint8_t hue = (uint8_t)((millis() / 35) & 0xFF);
       uint16_t col = wheel565(hue);
-      uint16_t col;
-      if (CFG.colorMode == COLOR_RAINBOW) {
-        uint8_t hue = (uint8_t)((millis() / 35) & 0xFF);
-        col = wheel565(hue);
-      } else {
-        col = counterColor();
-      }
+      uint16_t col = currentCounterColor();
       if (col != lastRainbowColor) {
         lastRainbowColor = col;
         drawBigCounter(lastRainbowColor);
@@ -1168,11 +1170,7 @@ void setup() {
   }
 
   marriageEpoch = makeLocalEpoch(CFG.y,CFG.mon,CFG.d,CFG.hh,CFG.mm,CFG.ss);
-  if (CFG.colorMode == COLOR_RAINBOW) {
-    lastRainbowColor = wheel565((uint8_t)((millis() / 35) & 0xFF));
-  } else {
-    lastRainbowColor = counterColor();
-  }
+  lastRainbowColor = currentCounterColor();
 
   drawCountdownScreenFull();
 }
