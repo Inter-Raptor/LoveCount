@@ -917,6 +917,7 @@ static ViewMode viewMode = VIEW_COUNTDOWN;
 static std::vector<String> todays;
 static int anecIndex = 0;
 static String mmddToday = "";
+static uint32_t lastAnecdoteInteraction = 0;
 
 static uint32_t lastSecondTick = 0;
 static uint32_t lastRainbowTick = 0;
@@ -1045,26 +1046,36 @@ static void drawCountdownScreenFull() {
   drawBottomBar();
 }
 
+static void drawAnecdoteScreen() {
+  lcd.fillScreen(TFT_BLACK);
+  applyDefaultFont();
+  drawCenteredText("Anecdote du jour", 10, 2, TFT_WHITE, TFT_BLACK);
+  
+  if (todays.empty()) {
+    lcd.setTextSize(2);
+    lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
+    lcd.setCursor(10, 90);
+    lcd.print("Aujourd'hui, il faut\nvous creer votre\nmoment a vous.");
+    return;
+}
+
+  if (anecIndex < 0) anecIndex = 0;
+  if (anecIndex >= (int)todays.size()) anecIndex = (int)todays.size() - 1;
+
+  lcd.setTextSize(2);
+  lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
+  lcd.setCursor(10, 80);
+  lcd.print(todays[anecIndex]);
+}
+
 static void enterAnecdoteMode() {
   mmddToday = timeReady ? todayMMDD() : String("01-01");
   todays = loadAnecdotes(mmddToday);
   anecIndex = 0;
   viewMode = VIEW_ANECDOTE;
   // (écran anecdotes simplifié pour rester lisible)
-  lcd.fillScreen(TFT_BLACK);
-  applyDefaultFont();
-  drawCenteredText("Anecdote du jour", 10, 2, TFT_WHITE, TFT_BLACK);
-  if (todays.empty()) {
-    lcd.setTextSize(2);
-    lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
-    lcd.setCursor(10, 90);
-    lcd.print("Aujourd'hui, il faut\nvous creer votre\nmoment a vous.");
-  } else {
-    lcd.setTextSize(2);
-    lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
-    lcd.setCursor(10, 80);
-    lcd.print(todays[0]);
-  }
+  lastAnecdoteInteraction = millis();
+  drawAnecdoteScreen();
 }
 
 static void exitAnecdoteMode() {
@@ -1073,9 +1084,37 @@ static void exitAnecdoteMode() {
 }
 
 static void handleTap(uint16_t x, uint16_t y) {
-  (void)x; (void)y;
-  if (viewMode == VIEW_COUNTDOWN) enterAnecdoteMode();
-  else exitAnecdoteMode();
+  if (viewMode == VIEW_COUNTDOWN) {
+    enterAnecdoteMode();
+    if (!todays.empty() && x < lcd.width() / 2) {
+      anecIndex = (int)todays.size() - 1;
+      drawAnecdoteScreen();
+    }
+    return;
+  }
+
+  if (y < 40) {
+    exitAnecdoteMode();
+    return;
+  }
+
+  if (todays.empty()) return;
+
+  lastAnecdoteInteraction = millis();
+  if (x < lcd.width() / 2) {
+    if (anecIndex == 0) {
+      exitAnecdoteMode();
+      return;
+    }
+    anecIndex -= 1;
+  } else {
+    if (anecIndex == (int)todays.size() - 1) {
+      exitAnecdoteMode();
+      return;
+    }
+    anecIndex += 1;
+  }
+  drawAnecdoteScreen();
 }
 
 // =================== WIFI ===================
@@ -1119,6 +1158,10 @@ static void loopApp() {
   // Touch
   uint16_t x,y;
   if (touchTap(x,y)) handleTap(x,y);
+
+  if (viewMode == VIEW_ANECDOTE && (millis() - lastAnecdoteInteraction >= 5000)) {
+    exitAnecdoteMode();
+  }
 
   // Rainbow
   if (viewMode == VIEW_COUNTDOWN && timeReady) {
