@@ -20,6 +20,8 @@
 // (sinon le générateur de prototypes casse tout)
 // =====================================================
 enum Gender : uint8_t { G_MALE=0, G_FEMALE=1, G_OTHER=2 };
+enum FontMode : uint8_t { FONT_CLASSIC=0, FONT_COMPACT=1, FONT_LARGE=2 };
+enum ColorMode : uint8_t { COLOR_RAINBOW=0, COLOR_FIXED=1, COLOR_PULSE=2 };
 
 struct PersonCfg {
   String name;
@@ -30,12 +32,16 @@ struct AppCfg {
   PersonCfg p1;
   PersonCfg p2;
   int y=2025, mon=9, d=20, hh=12, mm=10, ss=0;
+  FontMode font = FONT_CLASSIC;
+  ColorMode colorMode = COLOR_RAINBOW;
+  uint8_t fixedColor = 0;
 };
 
 static AppCfg CFG;
 
 // prototype explicite (encore plus sûr)
 static uint16_t genderColor(Gender g);
+static uint16_t paletteColor(uint8_t idx);
 
 // =================== USER CONFIG ===================
 // Ecran
@@ -78,12 +84,27 @@ static uint16_t genderColor(Gender g) {
   return TFT_WHITE;
 }
 
+static uint16_t paletteColor(uint8_t idx) {
+  switch (idx) {
+    case 1: return TFT_RED;
+    case 2: return TFT_GREEN;
+    case 3: return TFT_BLUE;
+    case 4: return TFT_CYAN;
+    case 5: return TFT_MAGENTA;
+    case 6: return TFT_YELLOW;
+    default: return TFT_WHITE;
+  }
+}
+
 static void setDefaultSettings() {
   CFG.p1.name = "Vivien";
   CFG.p1.gender = G_MALE;
   CFG.p2.name = "Myriam";
   CFG.p2.gender = G_FEMALE;
   CFG.y=2025; CFG.mon=9; CFG.d=20; CFG.hh=12; CFG.mm=10; CFG.ss=0;
+  CFG.font = FONT_CLASSIC;
+  CFG.colorMode = COLOR_RAINBOW;
+  CFG.fixedColor = 0;
 }
 
 static bool saveSettings() {
@@ -96,6 +117,11 @@ static bool saveSettings() {
   JsonObject m = doc["marriage"].to<JsonObject>();
   m["y"]=CFG.y; m["mon"]=CFG.mon; m["d"]=CFG.d;
   m["hh"]=CFG.hh; m["mm"]=CFG.mm; m["ss"]=CFG.ss;
+
+  JsonObject d = doc["display"].to<JsonObject>();
+  d["font"] = (int)CFG.font;
+  d["colorMode"] = (int)CFG.colorMode;
+  d["fixedColor"] = (int)CFG.fixedColor;
 
   File f = LittleFS.open(SETTINGS_PATH, "w");
   if (!f) return false;
@@ -132,6 +158,15 @@ static bool loadSettings() {
   CFG.hh  = (int)(m["hh"]  | 12);
   CFG.mm  = (int)(m["mm"]  | 10);
   CFG.ss  = (int)(m["ss"]  | 0);
+
+  JsonObject d = doc["display"];
+  CFG.font = (FontMode)(int)(d["font"] | (int)FONT_CLASSIC);
+  CFG.colorMode = (ColorMode)(int)(d["colorMode"] | (int)COLOR_RAINBOW);
+  CFG.fixedColor = (uint8_t)(int)(d["fixedColor"] | 0);
+
+  CFG.font = (FontMode)clampI((int)CFG.font, 0, 2);
+  CFG.colorMode = (ColorMode)clampI((int)CFG.colorMode, 0, 2);
+  CFG.fixedColor = (uint8_t)clampI((int)CFG.fixedColor, 0, 6);
 
   if (CFG.mon < 1) CFG.mon = 1;
   if (CFG.mon > 12) CFG.mon = 12;
@@ -483,6 +518,30 @@ static uint16_t wheel565(uint8_t pos) {
   return (uint16_t)(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
 }
 
+static uint16_t scaleColor565(uint16_t c, float k) {
+  uint8_t r = (uint8_t)((c >> 11) & 0x1F);
+  uint8_t g = (uint8_t)((c >> 5) & 0x3F);
+  uint8_t b = (uint8_t)(c & 0x1F);
+  r = (uint8_t)clampI((int)lroundf(r * k), 0, 31);
+  g = (uint8_t)clampI((int)lroundf(g * k), 0, 63);
+  b = (uint8_t)clampI((int)lroundf(b * k), 0, 31);
+  return (uint16_t)((r << 11) | (g << 5) | b);
+}
+
+static uint16_t counterColor() {
+  if (CFG.colorMode == COLOR_FIXED) {
+    return paletteColor(CFG.fixedColor);
+  }
+  if (CFG.colorMode == COLOR_PULSE) {
+    uint16_t base = paletteColor(CFG.fixedColor);
+    float phase = (float)(millis() % 2000) / 2000.0f;
+    float k = 0.35f + 0.65f * (0.5f + 0.5f * sinf(phase * 2.0f * (float)M_PI));
+    return scaleColor565(base, k);
+  }
+  uint8_t hue = (uint8_t)((millis() / 35) & 0xFF);
+  return wheel565(hue);
+}
+
 // =================== WEB ===================
 static WebServer server(80);
 
@@ -527,6 +586,29 @@ button{padding:10px 14px;cursor:pointer}
 <div class="row">
 <label>P2 :</label><input id="n2"><select id="g2">
 <option value="0">Homme</option><option value="1">Femme</option><option value="2">Autre</option>
+</select>
+</div>
+<div class="row">
+<label>Police :</label><select id="font">
+<option value="0">Classique</option>
+<option value="1">Compacte</option>
+<option value="2">Large</option>
+</select>
+</div>
+<div class="row">
+<label>Couleur :</label><select id="colorMode" onchange="toggleColorPick()">
+<option value="0">Arc-en-ciel</option>
+<option value="1">Fixe</option>
+<option value="2">Pulse</option>
+</select>
+<select id="fixedColor">
+<option value="0">Blanc</option>
+<option value="1">Rouge</option>
+<option value="2">Vert</option>
+<option value="3">Bleu</option>
+<option value="4">Cyan</option>
+<option value="5">Magenta</option>
+<option value="6">Jaune</option>
 </select>
 </div>
 <div class="row">
@@ -578,12 +660,27 @@ async function loadSettings(){
   const r=await fetch('/api/settings/get'); const j=await r.json();
   elD('n1').value=j.p1.name||''; elD('g1').value=String(j.p1.gender??0);
   elD('n2').value=j.p2.name||''; elD('g2').value=String(j.p2.gender??1);
+  elD('font').value=String(j.display?.font??0);
+  elD('colorMode').value=String(j.display?.colorMode??0);
+  elD('fixedColor').value=String(j.display?.fixedColor??0);
+  toggleColorPick();
   if(j.marriage&&j.marriage.iso) elD('mdate').value=j.marriage.iso;
 }
 async function saveSettings(){
-  const body=new URLSearchParams({n1:elD('n1').value,g1:elD('g1').value,n2:elD('n2').value,g2:elD('g2').value,mdate:elD('mdate').value});
+ const body=new URLSearchParams({
+    n1:elD('n1').value,g1:elD('g1').value,
+    n2:elD('n2').value,g2:elD('g2').value,
+    mdate:elD('mdate').value,
+    font:elD('font').value,
+    colorMode:elD('colorMode').value,
+    fixedColor:elD('fixedColor').value
+  });
   const r=await fetch('/api/settings/set',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});
   const j=await r.json(); elD('msg2').textContent=j.ok?'Sauvé ✅':'Erreur ❌';
+}
+function toggleColorPick(){
+  const mode=elD('colorMode').value;
+  elD('fixedColor').style.display=(mode==='0')?'none':'inline-block';
 }
 function doExport(){window.location='/api/export';}
 async function doImport(){
@@ -640,6 +737,9 @@ static void handleSettingsGet() {
   doc["p1"]["gender"] = (int)CFG.p1.gender;
   doc["p2"]["name"] = CFG.p2.name;
   doc["p2"]["gender"] = (int)CFG.p2.gender;
+  doc["display"]["font"] = (int)CFG.font;
+  doc["display"]["colorMode"] = (int)CFG.colorMode;
+  doc["display"]["fixedColor"] = (int)CFG.fixedColor;
 
   char iso[20];
   snprintf(iso, sizeof(iso), "%04d-%02d-%02dT%02d:%02d", CFG.y, CFG.mon, CFG.d, CFG.hh, CFG.mm);
@@ -668,6 +768,9 @@ static void handleSettingsSet() {
   String n2 = server.arg("n2");
   String g2 = server.arg("g2");
   String md = server.arg("mdate");
+  String font = server.arg("font");
+  String colorMode = server.arg("colorMode");
+  String fixedColor = server.arg("fixedColor");
 
   if (n1.length() == 0) n1 = CFG.p1.name;
   if (n2.length() == 0) n2 = CFG.p2.name;
@@ -679,6 +782,9 @@ static void handleSettingsSet() {
   CFG.p1.gender = (Gender)clampI(g1.toInt(), 0, 2);
   CFG.p2.name = n2;
   CFG.p2.gender = (Gender)clampI(g2.toInt(), 0, 2);
+  if (font.length()) CFG.font = (FontMode)clampI(font.toInt(), 0, 2);
+  if (colorMode.length()) CFG.colorMode = (ColorMode)clampI(colorMode.toInt(), 0, 2);
+  if (fixedColor.length()) CFG.fixedColor = (uint8_t)clampI(fixedColor.toInt(), 0, 6);
 
   if (okDt) { CFG.y=yy; CFG.mon=mo; CFG.d=dd; CFG.hh=hh; CFG.mm=mi; CFG.ss=ss; }
 
@@ -698,6 +804,9 @@ static void handleExport() {
   doc["settings"]["p1"]["gender"] = (int)CFG.p1.gender;
   doc["settings"]["p2"]["name"] = CFG.p2.name;
   doc["settings"]["p2"]["gender"] = (int)CFG.p2.gender;
+  doc["settings"]["display"]["font"] = (int)CFG.font;
+  doc["settings"]["display"]["colorMode"] = (int)CFG.colorMode;
+  doc["settings"]["display"]["fixedColor"] = (int)CFG.fixedColor;
 
   JsonObject m = doc["settings"]["marriage"].to<JsonObject>();
   m["y"]=CFG.y; m["mon"]=CFG.mon; m["d"]=CFG.d; m["hh"]=CFG.hh; m["mm"]=CFG.mm; m["ss"]=CFG.ss;
@@ -747,6 +856,14 @@ static void handleImport() {
     CFG.hh  = (int)(mm["hh"]  | CFG.hh);
     CFG.mm  = (int)(mm["mm"]  | CFG.mm);
     CFG.ss  = (int)(mm["ss"]  | CFG.ss);
+
+    JsonObject disp = s["display"];
+    CFG.font = (FontMode)(int)(disp["font"] | (int)CFG.font);
+    CFG.colorMode = (ColorMode)(int)(disp["colorMode"] | (int)CFG.colorMode);
+    CFG.fixedColor = (uint8_t)(int)(disp["fixedColor"] | (int)CFG.fixedColor);
+    CFG.font = (FontMode)clampI((int)CFG.font, 0, 2);
+    CFG.colorMode = (ColorMode)clampI((int)CFG.colorMode, 0, 2);
+    CFG.fixedColor = (uint8_t)clampI((int)CFG.fixedColor, 0, 6);
 
     saveSettings();
     marriageEpoch = makeLocalEpoch(CFG.y,CFG.mon,CFG.d,CFG.hh,CFG.mm,CFG.ss);
@@ -801,6 +918,25 @@ static uint32_t lastRainbowTick = 0;
 static uint16_t lastRainbowColor = 0xFFFF;
 
 // Draw helpers
+static void applyDefaultFont() {
+  lcd.setFont(nullptr);
+  lcd.setTextSize(1);
+}
+
+static int applyCountdownFont() {
+  switch (CFG.font) {
+    case FONT_COMPACT:
+      lcd.setFont(&fonts::Font2);
+      return 1;
+    case FONT_LARGE:
+      lcd.setFont(&fonts::Font4);
+      return 1;
+    default:
+      lcd.setFont(nullptr);
+      return 5;
+  }
+}
+
 static void drawCenteredText(const String& s, int y, int textSize, uint16_t color, uint16_t bg) {
   lcd.setTextSize(textSize);
   lcd.setTextColor(color, bg);
@@ -812,6 +948,7 @@ static void drawCenteredText(const String& s, int y, int textSize, uint16_t colo
 }
 
 static void drawNamesTop() {
+applyDefaultFont();
   lcd.setTextSize(2);
   String sep = "  &  ";
   int w1 = lcd.textWidth(CFG.p1.name);
@@ -834,6 +971,7 @@ static void drawNamesTop() {
 }
 
 static void drawBottomBar() {
+  applyDefaultFont();
   lcd.setTextSize(1);
   lcd.setTextColor(TFT_WHITE, TFT_BLACK);
 
@@ -865,6 +1003,7 @@ static void drawBigCounter(uint16_t color) {
   lcd.fillRect(0, 70, lcd.width(), 190, TFT_BLACK);
 
   if (!timeReady) {
+    applyDefaultFont();
     drawCenteredText("sync heure...", 115, 2, TFT_CYAN, TFT_BLACK);
     drawCenteredText("patiente",      145, 2, TFT_CYAN, TFT_BLACK);
     return;
@@ -885,8 +1024,9 @@ static void drawBigCounter(uint16_t color) {
   char buf[16];
   snprintf(buf, sizeof(buf), "%02ld:%02ld:%02ld", hh, mm, ss);
 
-  drawCenteredText(line1, 105, 5, color, TFT_BLACK);
-  drawCenteredText(String(buf), 160, 5, color, TFT_BLACK);
+  int size = applyCountdownFont();
+  drawCenteredText(line1, 105, size, color, TFT_BLACK);
+  drawCenteredText(String(buf), 160, size, color, TFT_BLACK);
 }
 
 static void drawCountdownScreenFull() {
@@ -903,6 +1043,7 @@ static void enterAnecdoteMode() {
   viewMode = VIEW_ANECDOTE;
   // (écran anecdotes simplifié pour rester lisible)
   lcd.fillScreen(TFT_BLACK);
+  applyDefaultFont();
   drawCenteredText("Anecdote du jour", 10, 2, TFT_WHITE, TFT_BLACK);
   if (todays.empty()) {
     lcd.setTextSize(2);
@@ -976,6 +1117,7 @@ static void loopApp() {
       lastRainbowTick = millis();
       uint8_t hue = (uint8_t)((millis() / 35) & 0xFF);
       uint16_t col = wheel565(hue);
+      uint16_t col = counterColor();
       if (col != lastRainbowColor) {
         lastRainbowColor = col;
         drawBigCounter(lastRainbowColor);
@@ -1024,7 +1166,7 @@ void setup() {
   }
 
   marriageEpoch = makeLocalEpoch(CFG.y,CFG.mon,CFG.d,CFG.hh,CFG.mm,CFG.ss);
-  lastRainbowColor = wheel565((uint8_t)((millis()/35)&0xFF));
+  lastRainbowColor = counterColor();
 
   drawCountdownScreenFull();
 }
